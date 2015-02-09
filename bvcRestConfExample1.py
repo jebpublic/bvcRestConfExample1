@@ -1,5 +1,13 @@
 #!/usr/bin/env python
 """
+bvcRestConfExample1
+
+Source available on Github:  https://github.com/jebpublic/bvcRestConfExample1
+      git clone https://github.com/jebpublic/bvcRestConfExample1.git
+
+Post issues to:  https://github.com/jebpublic/bvcRestConfExample1/issues
+
+
 bvcRestConfExample1.py is an example Python application that demonstrates
     how to use the BVC RESTconf api.
 
@@ -16,7 +24,8 @@ bvcRestConfExample1.py is an example Python application that demonstrates
     bvcRestConfExample1.py has been tested in only one environment:
        BVC 1.1.1 with HostTracker configured to use
        passive mode, Mininet in its default topology of 
-       one (1) switch and two (2) hosts.
+       one (1) switch and two (2) hosts, although it will probably
+       work with other topologies - just has not been tested.
     
 
     PRE-REQUISITES:
@@ -27,9 +36,12 @@ bvcRestConfExample1.py is an example Python application that demonstrates
 
     SETUP:
        1.  Configure BVC 1.1.1 HostTracker to use passive mode
+              - Edit the file /opt/bvc/controller/etc/opendaylight/karaf/54-arphandler.xml
        2.  Start BVC 1.1.1
+              - /opt/bvc/bin/start
        3.  Start Mininet and set its controller to BVC
              sudo mn --controller=remote,ip=<ip of BVC>
+       4.  Make sure that you can ping the ip of BVC from where you will run bvcRestConfExample1
 
     RUN:
        1.  At the command line:
@@ -41,9 +53,15 @@ bvcRestConfExample1.py is an example Python application that demonstrates
 
     TRY IT:
        1.  Start bvcRestConfExample1 -c <bvc_ip>
-       2.  On mininet do a pingall
+       2.  On mininet try these commands:
+               h1 ping h2
+               h2 ping h1
+
               - the hosts should be able to ping each other (something that normally
-                fails when HostTracker is in passive mode)
+                fails when HostTracker is in passive mode).  Note, if you do a pingall
+                the first pingall will have failures.  If you do pingall again it will
+                work.  THis is because we do not program flows until AFTER the toplogy
+                is updated (after the first ARP goes to the arphandler)
 
     USAGE:
        bvcRestConfExample1.py [options]
@@ -52,11 +70,6 @@ bvcRestConfExample1.py is an example Python application that demonstrates
          -c --controller <ip address>  the IP address of the BVC 1.1.1 (you should be able to ping it). Example:  192.168.56.101
          -h                            this help
 
- 
-Mail bug reports and suggestion to : jeb@elbrys.com
-Although it is better if you post a comment below wherever you retrieved this app
-since then the whole community will benefit.  I am watching everywhere that I have
-posted this.
 """
  
 import getopt, sys   
@@ -65,8 +78,13 @@ from requests.auth import HTTPBasicAuth
 from websocket import create_connection
  
 
-def RConfCreateStream(rConfBaseUrl):
-    # This calls RESTConf api to create a stream to nodes in operational data store
+def RConfCreateStream(rConfBaseUrl, user, password):
+    # This calls RESTConf api to create a stream for notifications about changes
+    #     in the topology in the operational data store
+    # INPUT: 
+    #    rConfBaseUrl - base url at which RestConf calls may be made - example:  http://192.168.56.101:8181/restconf
+    #    user - the user name with which to authenticate - example: admin
+    #    password - the password with which to authenticate - example - admin
     # RETURNS: stream's url or None if fail
     url = rConfBaseUrl + '/operations/sal-remote:create-data-change-event-subscription'
     headers = {'content-type': 'application/xml',
@@ -77,7 +95,7 @@ def RConfCreateStream(rConfBaseUrl):
                     <datastore xmlns="urn:sal:restconf:event:subscription">OPERATIONAL</datastore> \
                     <scope xmlns="urn:sal:restconf:event:subscription">SUBTREE</scope> \
                 </input>'
-    r = requests.post(url, data=payload, headers=headers, auth=HTTPBasicAuth('admin','admin'))
+    r = requests.post(url, data=payload, headers=headers, auth=HTTPBasicAuth(user, password))
     streamName = r.text
     #print streamName
 
@@ -90,32 +108,49 @@ def RConfCreateStream(rConfBaseUrl):
         streamName = streamName['stream-name']
         return streamName
 
-def RConfSubscribeStream(rConfBaseUrl, streamName):
-    # This calls the RESTConf api to suscribed to the stream at streamName
+def RConfSubscribeStream(rConfBaseUrl, user, password, streamName):
+    # This calls the RESTConf api to suscribe to the stream at streamName
+    # INPUT: 
+    #    rConfBaseUrl - base url at which RestConf calls may be made - example:  http://192.168.56.101:8181/restconf
+    #    user - the user name with which to authenticate - example: admin
+    #    password - the password with which to authenticate - example - admin
+    #    streamName - name of stream with which to subscribe (streamName is returned from creating it)
     # RETURNS: stream's url at which to listen with web socket
     url = rConfBaseUrl + '/streams/stream/' + streamName
     #print url
     headers = {'content-type': 'application/json',
                 'accept': 'application/json'}
-    r = requests.get(url, headers=headers, auth=HTTPBasicAuth('admin','admin'))
+    r = requests.get(url, headers=headers, auth=HTTPBasicAuth(user,password))
     streamListenUrl = r.headers['location']
     return streamListenUrl
 
 
-def RConfGetTopology(rConfBaseUrl):
-    # This calls the RESTConf api to get the topology
-    # RETURNS topology
+def RConfGetTopology(rConfBaseUrl, user, password):
+    # This calls the RESTConf api to retrieve the topology
+    # INPUT: 
+    #    rConfBaseUrl - base url at which RestConf calls may be made - example:  http://192.168.56.101:8181/restconf
+    #    user - the user name with which to authenticate - example: admin
+    #    password - the password with which to authenticate - example - admin
+    # RETURNS: topology as JSON
     url = rConfBaseUrl + '/operational/network-topology:network-topology/'
     #print url
     headers = {'content-type': 'application/json',
                 'accept': 'application/json'}
-    r = requests.get(url, headers=headers, auth=HTTPBasicAuth('admin','admin'))
+    r = requests.get(url, headers=headers, auth=HTTPBasicAuth(user, password))
     topo = r.json()
     return topo
 
-def AddFlows(rConfBaseUrl,switchId,flowId,hostMac):
-    #Adds two (2) flows with flowId and flowId+1 to switch switchId that has priority of 100
+def AddFlows(rConfBaseUrl,user, password, switchId,flowId,hostMac):
+    # Adds two (2) flows with flowId and flowId+1 to switch switchId that has priority of 100
     # that will flood all  packets from or to host with hostMac
+    # INPUT: 
+    #    rConfBaseUrl - base url at which RestConf calls may be made - example:  http://192.168.56.101:8181/restconf
+    #    user - the user name with which to authenticate - example: admin
+    #    password - the password with which to authenticate - example - admin
+    #    switchId - the id of the switch on which to program the flow.  This is from topology. - example - openflow:1
+    #    flowId - the number of the flow to program.  example - 10
+    #    hostMac - the MAC address of the host for which to program flows - example - 46:67:3b:09:61:c7
+    # RETURNS: nothing
     print "Adding flows, switchId " + switchId + ", flowId: " + str(flowId) + ", hostMac: " + hostMac
     url = rConfBaseUrl + '/config/opendaylight-inventory:nodes/node/'+switchId+'/table/0/flow/'+ str(flowId)
 
@@ -132,7 +167,7 @@ def AddFlows(rConfBaseUrl,switchId,flowId,hostMac):
       "match": {"ethernet-match": {"ethernet-source": {"address": "'+hostMac+'"}}},\
       "priority": 100,"table_id": 0,"hard-timeout": 0,"idle-timeout": 0} }'
 
-    r = requests.put(url, data=payload, headers=headers, auth=HTTPBasicAuth('admin','admin')) 
+    r = requests.put(url, data=payload, headers=headers, auth=HTTPBasicAuth(user,password)) 
     print r.text  
 
     flowId=flowId+1
@@ -147,13 +182,18 @@ def AddFlows(rConfBaseUrl,switchId,flowId,hostMac):
       "match": {"ethernet-match": {"ethernet-destination": {"address": "'+hostMac+'"}}},\
       "priority": 100,"table_id": 0,"hard-timeout": 0,"idle-timeout": 0} }'
 
-    r = requests.put(url, data=payload, headers=headers, auth=HTTPBasicAuth('admin','admin')) 
+    r = requests.put(url, data=payload, headers=headers, auth=HTTPBasicAuth(user,password)) 
     print r.text  
 
-def UpdateForwardingRules(rConfBaseUrl,topology):
-    #Looks at topology and for each switch adds flows for
-    #  each host that floods packts to/from the host
-    #Returns nothing
+def UpdateForwardingRules(rConfBaseUrl,user, password, topology):
+    # Evaluates the topology and for each switch adds flows for
+    #  each host.  The flows will flood packts to/from the host
+    # INPUT: 
+    #    rConfBaseUrl - base url at which RestConf calls may be made - example:  http://192.168.56.101:8181/restconf
+    #    user - the user name with which to authenticate - example: admin
+    #    password - the password with which to authenticate - example - admin
+    #    topology - the topology, in JSON, returned from RESTConf get topology
+    #RETURNS: nothing
 
     print "Updating forwarding rules..."
 
@@ -184,13 +224,15 @@ def UpdateForwardingRules(rConfBaseUrl,topology):
     flowId=10
     for host in hosts:
         for switch in switches:
-            AddFlows(rConfBaseUrl,switch,flowId,host)
+            AddFlows(rConfBaseUrl,user,passwordswitch,flowId,host)
         flowId=flowId+5
 
 
 def PrintTopology(topology):
-    #Prints out provided topology.  It is indented 12 spaces.
-    #Returns nothing
+    # Prints out provided topology.  It is indented 12 spaces.
+    # INPUT:
+    #    topology - the topology, in JSON, returned from RESTConf get topology
+    # RETURNS: nothing
 
     print "            ======================================================"
     print "            Topology"
@@ -257,17 +299,19 @@ def main():
         sys.exit()
     else:
         rConfBaseUrl = "http://"+bvcIp+":8181/restconf"
+        user = 'admin'
+        password = 'admin'
         print "Base URL for RESTConf is: " + rConfBaseUrl
-        topology = RConfGetTopology(rConfBaseUrl)
-        UpdateForwardingRules(rConfBaseUrl,topology)
+        topology = RConfGetTopology(rConfBaseUrl, user, password)
+        UpdateForwardingRules(rConfBaseUrl, user, password, topology)
         print "    Initial Topology: "
         PrintTopology(topology)
 
-        streamName = RConfCreateStream(rConfBaseUrl)
+        streamName = RConfCreateStream(rConfBaseUrl, user, password)
         if (streamName is None): 
             sys.exit()
         print "    Stream created, name: " + streamName
-        streamUrl = RConfSubscribeStream(rConfBaseUrl, streamName)
+        streamUrl = RConfSubscribeStream(rConfBaseUrl, user, password, streamName)
         if (streamUrl is None): 
             sys.exit()
         print "    Subscription to stream complete, url: " + streamUrl
@@ -280,8 +324,8 @@ def main():
             result =  ws.recv()
             #print "        Received '%s'" % result
             print "         Change detected, new topology: "
-            topology = RConfGetTopology(rConfBaseUrl)
-            UpdateForwardingRules(rConfBaseUrl,topology)
+            topology = RConfGetTopology(rConfBaseUrl, user, password)
+            UpdateForwardingRules(rConfBaseUrl, user, password, topology)
             PrintTopology(topology)
 
         ws.close()
