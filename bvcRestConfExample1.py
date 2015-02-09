@@ -115,7 +115,7 @@ def RConfGetTopology(rConfBaseUrl):
 
 def AddFlows(rConfBaseUrl,switchId,flowId,hostMac):
     #Adds two (2) flows with flowId and flowId+1 to switch switchId that has priority of 100
-    # that will flood all ARP packets from host with hostMac
+    # that will flood all  packets from or to host with hostMac
     print "Adding flows, switchId " + switchId + ", flowId: " + str(flowId) + ", hostMac: " + hostMac
     url = rConfBaseUrl + '/config/opendaylight-inventory:nodes/node/'+switchId+'/table/0/flow/'+ str(flowId)
 
@@ -151,8 +151,8 @@ def AddFlows(rConfBaseUrl,switchId,flowId,hostMac):
     print r.text  
 
 def UpdateForwardingRules(rConfBaseUrl,topology):
-    #Looks at topology and outputs flows to foward packets
-    # between all known hosts
+    #Looks at topology and for each switch adds flows for
+    #  each host that floods packts to/from the host
     #Returns nothing
 
     print "Updating forwarding rules..."
@@ -190,7 +190,7 @@ def UpdateForwardingRules(rConfBaseUrl,topology):
 
 def PrintTopology(topology):
     #Prints out provided topology.  It is indented 12 spaces.
-    #print topology
+    #Returns nothing
 
     print "            ======================================================"
     print "            Topology"
@@ -260,7 +260,7 @@ def main():
         print "Base URL for RESTConf is: " + rConfBaseUrl
         topology = RConfGetTopology(rConfBaseUrl)
         UpdateForwardingRules(rConfBaseUrl,topology)
-        print "    Starting Topology: "
+        print "    Initial Topology: "
         PrintTopology(topology)
 
         streamName = RConfCreateStream(rConfBaseUrl)
