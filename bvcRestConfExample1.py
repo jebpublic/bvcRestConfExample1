@@ -264,10 +264,12 @@ def main():
         PrintTopology(topology)
 
         streamName = RConfCreateStream(rConfBaseUrl)
-        if (streamName is None): sys.exit()
+        if (streamName is None): 
+            sys.exit()
         print "    Stream created, name: " + streamName
         streamUrl = RConfSubscribeStream(rConfBaseUrl, streamName)
-        if (streamUrl is None): sys.exit()
+        if (streamUrl is None): 
+            sys.exit()
         print "    Subscription to stream complete, url: " + streamUrl
 
         streamUrl = streamUrl.replace("http:","ws:",1)
