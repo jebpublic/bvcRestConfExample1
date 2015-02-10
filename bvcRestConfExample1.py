@@ -224,7 +224,7 @@ def UpdateForwardingRules(rConfBaseUrl,user, password, topology):
     flowId=10
     for host in hosts:
         for switch in switches:
-            AddFlows(rConfBaseUrl,user,passwordswitch,flowId,host)
+            AddFlows(rConfBaseUrl,user,password, switch,flowId,host)
         flowId=flowId+5
 
 
