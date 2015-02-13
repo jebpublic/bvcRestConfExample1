@@ -52,7 +52,7 @@ bvcRestConfExample1.py is an example Python application that demonstrates
                     where you are running bvcRestConfExample1)
 
     TRY IT:
-       1.  Start bvcRestConfExample1 -c <bvc_ip>
+       1.  Start bvcRestConfExample1 --controller <bvc_ip>
        2.  On mininet try these commands:
                h1 ping h2
                h2 ping h1
@@ -67,7 +67,7 @@ bvcRestConfExample1.py is an example Python application that demonstrates
        bvcRestConfExample1.py [options]
 
        Options:
-         -c --controller <ip address>  the IP address of the BVC 1.1.1 (you should be able to ping it). Example:  192.168.56.101
+         --controller <ip address>  the IP address of the BVC 1.1.1 (you should be able to ping it). Example:  192.168.56.101
          -h                            this help
 
 """
